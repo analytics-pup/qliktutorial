@@ -6,7 +6,7 @@
 
 CALL logBox('Start $(vAppName) - PreExit');
 
-// DERIVE FIELDS FROM FIELD <your calendar field> USING Calendar;
+DERIVE FIELDS FROM FIELD Date USING Calendar;
 
 // Create reporting period tables like so:
 // CALL createReportingPeriod('<Field in Data Model>','<Table Name>','<Field Name>');

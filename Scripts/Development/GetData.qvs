@@ -1,18 +1,16 @@
 /////////////////////////////////////////////////////////////////////////////
-//  Name                ExampleScript.qvs
+//  Name                GetData.qvs
 //  Purpose             
 //  Author              Stefan Sonntag
 /////////////////////////////////////////////////////////////////////////////
 
 CALL logBox('Start $(vAppName) - Example');
 
-// Example:
-// Opportunity:
-// LOAD
-//     *
-// FROM 
-//     $(vSalesAreaDataFolder)Opportunity.qvd](qvd)
-// ; 
+CALL getXLS('[lib://App/$(vOther)/Data.xlsx]','Sales');
+CALL getXLS('[lib://App/$(vOther)/Data.xlsx]','Product');
+CALL getXLS('[lib://App/$(vOther)/Data.xlsx]','Account');
+CALL getXLS('[lib://App/$(vOther)/Data.xlsx]','ACV');
+CALL getXLS('[lib://App/$(vOther)/Data.xlsx]','Entitlements');
 
 CALL logBox('End $(vAppName) - Example');
 

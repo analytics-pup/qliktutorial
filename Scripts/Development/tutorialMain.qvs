@@ -10,7 +10,7 @@ CALL logBox('Start $(vAppName) Main');
 // $(Must_Include=$(vAppScripts)SectionAccess.qvs]);
 
 $(Must_Include=$(vAppScripts)SetUp.qvs]);
-$(Must_Include=$(vAppScripts)ExampleScript.qvs]);
+$(Must_Include=$(vAppScripts)GetData.qvs]);
 $(Must_Include=$(vAppScripts)PreExit.qvs]);
 
 CALL logBox('End $(vAppName) Main');
