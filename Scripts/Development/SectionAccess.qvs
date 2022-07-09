@@ -1,0 +1,37 @@
+/////////////////////////////////////////////////////////////////////////////
+//  Name                SectionAccess.qvs
+//  Purpose             Build the tables for AppMain Section Access
+//  Author              Stefan Sonntag
+/////////////////////////////////////////////////////////////////////////////
+
+CALL logBox('Start $(vAppName) - Section Access');
+
+Section Access;
+
+AuthorizationTable:
+LOAD
+    "ACCESS",
+    USER.EMAIL,
+    REDUCTION
+FROM '$(vMetaXLS)'
+(ooxml, embedded labels, table is SectionAccess);
+
+Section Application;
+
+[Object Visibility]:
+LOAD * INLINE [
+Name.Object, 		Activate.Object, 	REDUCTION
+HiddenSheet,		1,					ADMIN
+ContentBrowser,		1,					ADMIN
+HiddenSheet,		0,					USER
+ContentBrowser,		1,					USER
+];
+
+// add any table below tied to the data model and link it to the AuthorizationTable 
+// via the REDUCTION field. 
+
+CALL logBox('End $(vAppName) - Section Access');
+
+/////////////////////////////////////////////////////////////////
+// 						 End Scripts
+/////////////////////////////////////////////////////////////////

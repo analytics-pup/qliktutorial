@@ -1,0 +1,4 @@
+site_name:  tutorial Documentation
+docs_dir: Doc
+site_dir: Site
+theme: readthedocs

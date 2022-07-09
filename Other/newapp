@@ -1,0 +1,79 @@
+# Use script like so: newapp <yournewapp>. 
+
+# In order for this script to work you need to
+# 1) Set up google drive such that it integrates/mounts it into your file system
+# so that you can reference a directory like below in line 15, 16 and 29
+# 2) Install Qlik CLI and create an alias 'qlik' for it. make sure that the location
+# of the command is in your PATH and thus can be excuted from everywhere
+# 3) install mkdocs (https://www.mkdocs.org/), with 'pip install mkdocs'
+# Given that pip is a python package installer, Python is a prerequisite on your machine
+# 4) Install Google Chrome. If you are on Windows that path to the executable must
+# be adjusted in line 20 and 43, I was using a Mac at the time of writing the script
+
+
+# set up base dir and copy template
+cp -R "/Volumes/GoogleDrive/Geteilte Ablagen/Qlik/Apps/Generic/AppTemplate" "/Users/stefansonntag/Google Drive/Geteilte Ablagen/Qlik/Apps/Development/$1"
+cd "/Users/stefansonntag/Google Drive/Geteilte Ablagen/Qlik/Apps/Development/$1"
+qlik app copy 3b1ca5de-3840-4529-9b5b-cd31ae17838d --context ssg -q --attributes-name "$1 V0.1"  > ./appid
+
+# create mkdocs.yml
+echo 'site_name:  '$1 'Documentation' > ./mkdocs.yml
+echo 'docs_dir: Doc' >> ./mkdocs.yml
+echo 'site_dir: Site' >> ./mkdocs.yml
+echo 'theme: readthedocs' >> ./mkdocs.yml
+
+#create open script
+cat ./appid | xargs -0 -L1 -I '$' echo '/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome https://productsup.eu.qlikcloud.com/dataloadeditor/app/$'  >> ./open
+
+#create reload script
+cat ./appid | xargs -0 -L1 -I '$' echo 'qlik app build --context ssg -a $'  > ./reload
+
+# cat ./appid | xargs -0 -L1 -I 'xxx' echo '/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome https://catwalk.core.qlik.com/?engine_url=wss://productsup.eu.qlikcloud.com/app/xxx?qlik-web-integration-id=F3xUU5dURUcisvtArMIXDmE0tvPDwuLR&qlik-csrf-token=xE0iuUiQ--1wlN64l2rJGBuuX9d8enhFZYHc'  > ./catwalk
+
+# create delete script
+cat ./appid | xargs -0 -L1 -I '$' echo 'qlik app rm $'  > ./delete
+echo 'cd "$HOME/Google Drive/Geteilte Ablagen/Qlik/Apps/Development/"'  >> ./delete
+echo 'rm -R' $1  >> ./delete
+
+# create get script
+cat ./appid | xargs -0 -L1 -I '§' echo 'qlik app export § > ./Apps/$1.qvf' > ./get
+
+# create deploy to Test script
+echo 'cp ./Scripts/Development/*.qvs ./Scripts/Test'   >> ./test
+
+# create deploy to Production script
+echo 'cp ./Scripts/Development/*.qvs ./Scripts/Production'   > ./prod
+
+# Create script to launch doc server
+echo 'mkdocs serve '   > ./docs
+cat ./appid | xargs -0 -L1 -I '$' echo '/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome http://127.0.0.1:8000/'  >> ./docs
+
+
+# now get ready to launch everything
+# 1. rename Meta XLS
+cd "/Users/stefansonntag/Google Drive/Geteilte Ablagen/Qlik/Apps/Development/$1/Meta"
+mv ./AppTemplate.xlsx "$1 Meta.xlsx"
+# 2. rename AppMain.qvs
+cd "/Users/stefansonntag/Google Drive/Geteilte Ablagen/Qlik/Apps/Development/$1/Scripts/Development"
+mv ./AppMain.qvs "$1Main.qvs"
+# 3. go back to base dir
+cd ../..
+# 4. set up git
+git init -q
+echo 'Export/*' > ./.gitignore
+echo 'open' >> ./.gitignore
+echo 'reload' >> ./.gitignore
+echo 'appid' >> ./.gitignore
+echo 'delete' >> ./.gitignore
+echo 'doc' >> ./.gitignore
+echo 'get' >> ./.gitignore
+# echo 'catwalk' >> ./.gitignore
+echo './.gitignore' >> ./.gitignore
+git add -A
+git commit -m "V0.1"
+
+# 5. open app and VS Code
+chmod 755 ./open
+code .
+./open >/dev/null 2>/dev/null &
+

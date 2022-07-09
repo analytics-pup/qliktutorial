@@ -1,0 +1,20 @@
+/////////////////////////////////////////////////////////////////////////////
+//  Name                AppMain.qvs
+//  Purpose             
+//  Author              Stefan Sonntag
+/////////////////////////////////////////////////////////////////////////////
+
+CALL logBox('Start $(vAppName) Main');
+
+// Access Control is optional and disabled by default to avoid a lock out
+// $(Must_Include=$(vAppScripts)SectionAccess.qvs]);
+
+$(Must_Include=$(vAppScripts)SetUp.qvs]);
+$(Must_Include=$(vAppScripts)ExampleScript.qvs]);
+$(Must_Include=$(vAppScripts)PreExit.qvs]);
+
+CALL logBox('End $(vAppName) Main');
+
+/////////////////////////////////////////////////////////////////
+// 						 End Scripts
+/////////////////////////////////////////////////////////////////

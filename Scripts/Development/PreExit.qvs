@@ -1,0 +1,23 @@
+/////////////////////////////////////////////////////////////////////////////
+//  Name                PreExit.qvs
+//  Purpose             
+//  Author              Stefan Sonntag
+/////////////////////////////////////////////////////////////////////////////
+
+CALL logBox('Start $(vAppName) - PreExit');
+
+// DERIVE FIELDS FROM FIELD <your calendar field> USING Calendar;
+
+// Create reporting period tables like so:
+// CALL createReportingPeriod('<Field in Data Model>','<Table Name>','<Field Name>');
+// e.g. CALL createReportingPeriod('CloseDate.Opportunity','Close Date Period','OpportunityCloseDate.Period');
+
+IF UPPER('$(vExportTables)') = 'YES' OR UPPER('$(vExportTables)') = 'Y' THEN
+    CALL storeAllTables;
+END IF
+
+CALL logBox('End $(vAppName) - PreExit');
+
+/////////////////////////////////////////////////////////////////
+// 						 End Scripts
+/////////////////////////////////////////////////////////////////

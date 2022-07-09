@@ -1,0 +1,1199 @@
+SUB EmptyQVD(Path)
+   //Check file exists
+   IF (NOT isNull(qvdCreateTime('$(Path)'))) THEN
+      //Check if QVD is already empty
+      IF (qvdNoOfRecords('$(Path)') > 0) THEN   
+         //Load the structure from the existing QVD
+         //Where clause returns no records
+         _TableStructure:
+         LOAD
+             *
+         FROM '$(Path)' (qvd)
+         WHERE 1<>1;
+
+         //Store table definition back to QVD
+         STORE _TableStructure INTO '$(Path)' (qvd);
+         DROP TABLE _TableStructure;
+      END IF
+   END IF
+END SUB
+
+SUB createVariables(vSheet, vTab)
+
+    CALL logBox('Start createVariables');
+    
+    // Load all rows from XLS
+    Variables:
+    LOAD
+        *
+    FROM 
+        $(vSheet)
+        (ooxml, embedded labels, table is $(vTab))
+    WHERE
+        // Allow user friendly expressions to state if a variable should be read
+        (
+            upper(Active.Variable_) = 'Y'  OR upper(Active.Variable_) = 'YES' OR 
+            upper(Active.Variable_) = 'TRUE' OR Active.Variable_ = 1
+        )
+    ;
+
+    LET vNumberOfRows = NoOfRows('Variables');
+    
+    // make sure the loop down below runs at least once
+    IF '$(vNumberOfRows)' = 1 THEN
+        LET vNumberOfRows = 1;
+    END IF
+
+    IF '$(vNumberOfRows)' > 1 THEN
+        LET vNumberOfRows = $(vNumberOfRows)-1;
+    END IF
+
+    // Loop thru the table and assing a value to each variable
+    IF $(vNumberOfRows) > 0 THEN
+        FOR i = 1 to $(vNumberOfRows)
+            // get variable name
+            LET vVariableName = peek('Name.Variable_', i, 'Variables'); 
+            // Trace Variable $(vVariableName);
+            // get variable content
+            LET vValue = peek('Value.Variable_', i, 'Variables');
+            // Trace Value $(vValue);
+            // assign value to variable
+            LET $(vVariableName) = '$(vValue)';
+        NEXT i
+    END IF
+
+    // define a universal calendar format which can be used for any date field.
+    [Calendar]:
+    DECLARE FIELD DEFINITION Tagged ('$date')
+    FIELDS
+        Dual(Year($1), YearStart($1))                                                           AS  [Year] Tagged ('$axis', '$year'),
+        Dual('Q'&Num(Ceil(Num(Month($1))/3)),Num(Ceil(NUM(Month($1))/3),00))                    AS  [Quarter] Tagged ('$quarter', '$cyclic'),
+        Dual(Year($1)&'-Q'&Num(Ceil(Num(Month($1))/3)),QuarterStart($1))                        AS  [YearQuarter] Tagged ('$yearquarter', '$qualified','$hidden'),
+        Dual('Q'&Num(Ceil(Num(Month($1))/3))&'-'&Year($1),QuarterStart($1))                     AS  [QuarterYearLong] Tagged ('$yearquarter', '$qualified','$hidden'),
+        Dual('Q'&Num(Ceil(Num(Month($1))/3))&'  '&right(Year($1),4),QuarterStart($1))           AS  [QuarterYear] Tagged ('$yearquarter', '$qualified'),
+        Dual('Q'&Num(Ceil(Num(Month($1))/3)),QuarterStart($1))                                  AS  [_YearQuarter] Tagged ('$yearquarter', '$hidden', '$simplified'),
+        Month($1)                                                                               AS  [Month] Tagged ('$month', '$cyclic'),
+        Dual(Year($1)&'-'&Month($1), monthstart($1))                                            AS  [YearMonth] Tagged ('$axis', '$yearmonth', '$qualified','$hidden'),
+        Dual(Month($1)&'  '&right(Year($1),4), monthstart($1))                                  AS  [MonthYear] Tagged ('$axis', '$yearmonth', '$qualified'),
+        Dual(Month($1), monthstart($1))                                                         AS  [_YearMonth] Tagged ('$axis', '$yearmonth', '$simplified', '$hidden'),
+        Dual('W'&Num(Week($1),00), Num(Week($1),00))                                            AS  [Week] Tagged ('$weeknumber', '$cyclic'),
+        Dual('W'&Num(Week($1),00), Num(Week($1),00))&'  '&Dual(Year($1), YearStart($1))         AS  [WeekYear] TAGGED ('$axis', '$weeknumber', '$qualified'),
+        Date(Floor($1))                                                                         AS  [Date] Tagged ('$axis', '$date', '$qualified'),
+        Date(Floor($1), 'D')                                                                    AS  [_Date] Tagged ('$axis', '$date', '$hidden', '$simplified'),
+        If(DayNumberOfYear($1) <= DayNumberOfYear(Today()),dual('Yes',1), dual('No',0))         AS  [InYTD] TAGGED ('$hidden'),
+        Year(Today())-Year($1)                                                                  AS  [YearsAgo] TAGGED ('$hidden'),
+        If(DayNumberOfQuarter($1) <= DayNumberOfQuarter(Today()),dual('Yes',1),dual('No',0))    AS  [InQTD] TAGGED ('$hidden'),
+        4*Year(Today())+Ceil(Month(Today())/3)-4*Year($1)-Ceil(Month($1)/3)                     AS  [QuartersAgo] TAGGED ('$hidden'),
+        Ceil(Month(Today())/3)-Ceil(Month($1)/3)                                                AS  [QuarterRelNo] TAGGED ('$hidden'),
+        If(Day($1)<=Day(Today()),dual('Yes',1),dual('No',0))                                    AS  [InMTD] TAGGED ('$hidden'),
+        12*Year(Today())+Month(Today())-12*Year($1)-Month($1)                                   AS  [MonthsAgo] TAGGED ('$hidden'),
+        Month(Today())-Month($1)                                                                AS  [MonthRelNo] TAGGED ('$hidden'),
+        Year(Today())-Year($1)                                                                  AS  [YearRelNo] TAGGED ('$hidden'),
+        If(WeekDay($1)<=WeekDay(Today()),dual('Yes',1),dual('No',0))                            AS  [InWTD] TAGGED ('$hidden'),
+        (WeekStart(Today())-WeekStart($1))/7                                                    AS  [WeeksAgo] TAGGED ('$hidden'),
+        Week(Today())-Week($1)                                                                  AS  [WeekRelNo] TAGGED ('$hidden'),
+        Today() - floor($1)                                                                     AS  [DaysAgo] TAGGED ('$hidden');
+
+    
+    // cleanup. The LET vraible is a result of the fact that the loop runs 
+    // one time more than needed if there is only 1 variable decalred in the XLS
+    // so we need to clean it up for that case
+    LET vNumberOfRows   =   NULL();
+    LET i               =   NULL();
+    LET vVariableName   =   NULL();
+    LET vValue          =   NULL();
+    
+END SUB
+
+SUB removeVariables
+
+    // removes all variables from memory that are flagged AS  nullable
+    // in the Variables Tab of the Meta Sheet. Ideally this subroutine
+    // is called right before existign the main script
+
+    CALL logBox('Start removeVariables');
+
+    // initialize
+    SET vNumberOfRows   =   0;
+
+    // create temp table to process
+    VariablesToRemove:
+    NOCONCATENATE
+    LOAD 
+        *
+    RESIDENT 
+        Variables
+    WHERE
+        (
+            upper(Nullable.Variable_) = 'Y' OR upper(Nullable.Variable_) = 'YES' OR
+            upper(Nullable.Variable_) = 'TRUE' OR Nullable.Variable_ = 1
+        )
+    ;
+
+    LET vNumberOfRows = NoOfRows('VariablesToRemove');
+
+    CALL log('$(vNumberOfRows)', 'Variables to remove');
+
+    IF $(vNumberOfRows) > 0 THEN
+        FOR i = 0 to $(vNumberOfRows) - 1
+            // get the variable
+             LET vVariableName = peek('Name.Variable_', i, 'VariablesToRemove'); 
+            // remove variable by setting it to Null()
+            LET $(vVariableName) = NULL();
+            // write it out to the console
+            CALL log('removed','Variable $(vVariableName)');
+        NEXT i
+    END IF
+
+
+    // finally reduce the variable tables to contain only the variables
+    // that survived
+
+    RENAME TABLE Variables to VariablesTemp;
+
+    Variables:
+    NOCONCATENATE
+    LOAD
+        *
+    RESIDENT
+        VariablesTemp
+    WHERE
+         // Allow user friendly expressions to state if a variable should be read
+        (
+            upper(Nullable.Variable_) = 'N'  OR upper(Nullable.Variable_) = 'NO' OR 
+            upper(Nullable.Variable_) = 'FALSE' OR Nullable.Variable_ = 0
+        )
+    ;
+
+    // cleanup: delete temp table and remove variable used for the function
+    DROP TABLE VariablesToRemove;
+    DROP TABLE VariablesTemp;
+
+    LET vNumberOfRows   =   NULL();
+    LET vVariableName   =   NULL();
+    LET i               =   NULL();
+    
+    CALL log('Variable Table adjusted')
+
+END SUB
+
+SUB log(vMessage,vLevel)
+
+    // Prints out a message to the console. If none of the standard levels
+    // (I, W, E) is given, the default will be 'Info'. Note that you can also
+    // use any other text instead of the defaults and it will be displayed instead
+
+
+    LET vTimeStamp = NOW();
+    SET vSeparator = '==>';
+    
+    IF LEN(vLevel) = 0 THEN
+        SET vLevelText = 'Info';
+    ELSE
+        IF '$(vLevel)' <> ' ' THEN
+            LET vMatch = MATCH('$(vLevel)','I','W','E');
+            IF vMatch = 0 THEN
+                SET vLevelText = '$(vLevel)';
+            ELSE
+                LET vLevelText = PICK($(vMatch), 'Info', 'Warning', 'Error');
+            END IF
+        ELSE
+            SET vSeparator = ' '; 
+        END IF  
+    END IF
+
+    // write it out to the console 
+    TRACE $(vTimeStamp): $(vLevelText) $(vSeparator) $(vMessage);
+
+    // cleanup
+    LET vTimeStamp  = NULL();
+    LET vMatch      = NULL();
+    LET vLevelText  = NULL();
+    LET vSeparator  = NULL();
+    
+END SUB
+
+SUB logBox(vBoxMessage)
+
+    CALL log('--------------------------------',' ');
+    CALL log('$(vBoxMessage)',' ');
+    CALL log('--------------------------------',' ');
+
+END SUB
+
+SUB storeQVD(vTableName, vFolder, vPrefix)
+
+    CALL logBox('Start storeQVD');
+    CALL log('$(vTableName)','Table');
+    // CALL log('$(vFolder)','Folder Destination');
+    CALL log('$(vPrefix)','Prefix');
+
+    SET vExit = 0;
+
+    IF LEN(vTableName) = 0 OR LEN(vFolder) = 0 THEN
+        CALL log('Table and Folder Destination missing!','E');
+        SET vExit = 1;
+    END IF
+
+    IF vExit = 0 THEN
+        STORE '$(vTableName)' INTO '$(vFolder)$(vPrefix)$(vTableName).qvd' (qvd);
+        CALL log('$(vTableName) stored as QVD','I');
+
+      
+        QVD:
+        LOAD 
+            * 
+        FROM 
+            [lib://Downloads:App/1X94ZECxtNdE3kdXbNGl68JgpN5JVyCXm/QVD.qvd](qvd) 
+        ;
+
+        CONCATENATE(QVD)
+        LOAD
+        	'$(vPrefix)$(vTableName)'   AS Table.QVD,
+            '$(vFolder)'                AS Folder.QVD,
+            '$(vAppName)'               AS App.QVD,
+            timestamp(now()) 	        AS Timestamp.QVD,
+            NoOfRows('$(vTableName)')   AS Records.QVD,
+            NoOfFields('$(vTableName)') AS Fields.QVD
+         AUTOGENERATE(1)
+         ;
+
+         STORE QVD into [lib://Downloads:App/1X94ZECxtNdE3kdXbNGl68JgpN5JVyCXm/QVD.qvd](qvd);
+         DROP TABLE QVD;
+
+    END IF
+
+    LET vExit = NULL();
+
+END SUB 
+
+SUB appendTableName(vTableName)
+
+    CALL logBox('Start appendTableName');  
+    CALL log('$(vTableName)','Table');  
+
+    LET vNumberOfFields = NoOfFields('$(vTableName)');
+
+    FOR i = 0 to vNumberOfFields
+        LET vFieldName = FIELDNAME(i,'$(vTableName)');
+        RENAME FIELD '$(vFieldName)' TO '$(vFieldName).$(vTableName)';
+    NEXT
+
+    LET vFieldName = NULL();
+    LET i = NULL();
+
+END SUB
+
+SUB truncateTableName(vTableName, vOccurence)
+
+  FOR vField = 1 to NoOfFields('$(vTableName)')
+  	  // Trace In loop ... $(vField);
+      LET vFieldName = FieldName(vField,'$(vTableName)');
+      // Trace vFieldName = $(vFieldName);
+      LET vPosition = index('$(vFieldName)','.',$(vOccurence))-1;
+      // Trace vPosition = $(vPosition);
+      LET vTruncatedName = left('$(vFieldName)',$(vPosition));
+      // Trace vTruncatedName is $(vTruncatedName);
+      RENAME FIELD $(vFieldName) TO $(vTruncatedName); 
+  Next vField
+  
+  LET vField 			= NULL();
+  LET vFieldName 		= NULL();
+  LET vPosition 		= NULL();
+  LET vTruncatedName 	= NULL();
+
+END SUB
+
+SUB exportFieldNames(vTableName,vPrefix)
+
+    CALL logBox('Start exportFieldNames');
+    CALL log('$(vTableName)','Table');
+
+    IF LEN(vPrefix)>0 THEN
+    
+        FOR j = 1 to NoOfFields('$(vTableName)')
+            LET vFieldName = FieldName(j,'$(vTableName)');
+           
+            FieldNames:
+            LOAD
+                '$(vFieldName) AS  $(vFieldName),'  AS   'Field Name'
+            AUTOGENERATE(1);  
+        NEXT j
+    
+        STORE FieldNames INTO '$(vExportDataFolder)$(vPrefix)$(vTableName)_FieldList.txt]' (txt);
+        DROP TABLE FieldNames;
+        CALL log('$(vTableName) field list stored as TXT','I');
+    
+    ELSE
+    
+        call log('You need to indicate the File Prefix when calling this function','E');
+    
+    END IF
+
+    LET j = NULL();
+    LET vFieldName = NULL();
+    
+END SUB
+
+SUB createCalendar(vCalendar, vDateField, vStartDate, vEndDate)
+
+    CALL logBox('Start createCalendar');
+
+    // defaults: -3 years and + 1 years (beginning and end, respectively) if
+    // no params are given
+    IF '$(vStartDate)' = '' THEN 
+        LET vStartDate  = num(YearStart(AddYears(Today(),-3))); 
+    ELSE
+    	LET vStartDate = num(date#('$(vStartDate)','DD.MM.YYYY'));
+    END IF
+    
+    IF '$(vEndDate)' = '' THEN    
+        LET vEndDate =  num(YearEnd(AddYears(Today(),1)));  
+    ELSE
+    	LET vEndDate = num(date#('$(vEndDate)','DD.MM.YYYY'));
+    END IF
+
+    IF '$(vCalendar)' = '' THEN
+        LET vCalendar = 'Calendar';   
+    END IF
+    
+    IF '$(vDateField)' = '' THEN
+        LET vDateField  = 'Date';       
+    END IF
+
+    IF isNull(TableNumber('$(vCalendar)')) THEN
+    
+    	LET vCalendarDays = vEndDate - vStartDate;
+        
+        $(vCalendar):
+        NOCONCATENATE
+        LOAD
+            date('$(vStartDate)'+Iterno()-1,'DD.MM.YYYY')      AS  %Date.$(vCalendar),
+            date('$(vStartDate)'+Iterno()-1,'DD.MM.YYYY')      AS  $(vDateField)
+        AUTOGENERATE 1
+        WHILE iterno()-1<$(vCalendarDays)
+        ;
+
+        CALL log('Calendar "$(vCalendar)" created');
+        
+    ELSE
+
+        CALL log('Calendar $(vCalendar) alreday exists!','E');
+
+    END IF
+
+    // cleanup
+    LET vStartDate      = NULL();
+    LET vCalendarDays   = NULL();
+    LET vCalendar       = NULL();
+    LET vDateField      = NULL(); 
+
+END SUB
+
+SUB createHashtags(A,B,C,D,E,F,G,H)
+
+    // this routine can be used to find a string of characters in a field ( e.g. hashtags in a description field)
+    // and store those in an new table (e.g. a hashtag table) with a link to the record where the string was found.
+    // It can also be used to find other character strings than hashtags, eg. CR-1234 or @P1234, see setting
+    // of parameters below. The resulting string of records needs to be composed
+    // of ASCII characters (A-Z,a-z) and digits (0-9) only, with the exception of the hyphen which is a permitted
+    // special character (e.g. REC-1234)
+
+    // The routine works with the following parameters:
+    // CALL CreateMarker(SourceTable, SourceField,TargetTable, TargetColumn, KeyColumnName, StringIdentifier, MinLength, WordSeparator)
+    // where
+    // SourceTable      = the table which contains the field to be examined
+    // SourceField      = the field to be examined
+    // TargetTable      = the name of the new table which will contain the found strings (e.g. Hashtags)
+    // TargetColumn     = the field in the new table which will contain the found strings (e.g. Hashtags)
+    // KeyColumnName    = the field which links the SourceTable and TargetTable
+    // StringIdentifier = the string with which a substring should start, e.g. # or @ etc. This can also
+    //                                                                                be a longer string, e.g. CR- or #demo etc.
+    //                                                                                If this parameter is not set it defaults to #
+    // MinLength        = the minimum length of the entire string to be found, defaults to 3
+    // WordSeparator    = the string of characters that separates words in the source field from each other.
+    //                    If not set it defaults to a blank ' '
+
+    // Make sure you don’t use brackets [] for table or columns, leaving them in '' is sufficient if a table or columns name should be two words or more, e.g
+    // Call CreateMarker('Data Table','String Field','Hashtag Table','Hashtag Field','Key','#');
+
+    // Make sure all parameters are passed and/or set to a default value
+
+    IF isnull(A) OR isnull(B) OR isnull(C) OR isnull(D) OR isnull(E) THEN
+
+        TRACE =====================;
+        TRACE WARNING;
+        TRACE =====================;
+        TRACE This routine must be called at a minimum like this:;
+        TRACE ;
+
+        TRACE CALL CreateHashtag(SourceTable,SourceColumn,TargetTable,TargetColumn,KeyColumnName);
+        TRACE ;
+        TRACE Optionally you may pass as a 6th parameter the character which marks the beginning of a hashtag (Default is '#');
+        TRACE and a 7th parameter which marks how words are separated from each other(Default is ' ');
+        TRACE;
+        TRACE;
+
+    ELSE
+
+        TRACE Running CreateHashtags('$(A)','$(B)','$(C)','$(D)','$(E)','$(F)','$(G)','$(H)');
+
+        LET vSourceTableName=A;
+        LET vSourceColumnName=B;
+        LET vTargetTableName=C;
+        LET vTargetColumnName=D;
+        Let vTargetKeyName=E;
+
+                               // set defaults
+        IF isnull(F) THEN
+            LET vStartChar='#';
+        ELSE
+            LET vStartChar=F;
+        END IF;
+
+        IF isnull(G) THEN
+            LET vMinLength='3';
+        ELSE
+            LET vMinLength=G;
+        END IF;
+
+        IF isnull(H) THEN
+            LET vWordSeparator=' ';
+        ELSE
+            LET vWordSeparator=H;
+        END IF;
+
+        // create a table stub
+        LET vCheckTableExistance = NoOfRows('$(vTargetTableName)');
+        IF isnull(vCheckTableExistance) THEN
+            HashtagStub:
+            LOAD
+               'DeleteMeLater'              as A,
+               null()                                    as B
+            autogenerate 1;
+        END IF;
+
+                               // read the source field and break it down into singular words using subfield() and the word
+        // separator parameter, then filter out 95% which are not a hashtag (=don't' start with
+        // the word separator parameter)
+
+        HashtagCandidates:
+        NoConcatenate
+        Load
+               *
+        where
+               upper(mid(CandidateWord,1,len('$(vStartChar)')))=upper('$(vStartChar)')
+               and len(CandidateWord)>='$(vMinLength)'
+               and substringcount(CandidateWord,'$(vWordSeparator)') = 0
+        ;
+
+        LOAD
+               DISTINCT
+            subfield("$(vSourceColumnName)",'$(vWordSeparator)') as CandidateWord,
+            "$(vTargetKeyName)" as CandidateKey
+        Resident
+            "$(vSourceTableName)"
+        ;
+
+        // create a table that breaks down each word into singular characters
+        HashtagLetters:
+        NoConcatenate
+        Load
+                 *,
+            mid(CandidateWord,IterNo(),1) as CandidateWordLetter,
+            iterno() as CandidateWordLetterNo
+        Resident
+               HashtagCandidates
+        while
+               IterNo()< len(CandidateWord)+1
+        ;
+
+        // find words that contain at least one of the excluded characters which could
+        // occur somewhere in the middle of the found word
+        ExcludedHashtags:
+        NoConcatenate
+        LOAD DISTINCT
+          CandidateWord as ExcludedHashtag
+        Resident
+          HashtagLetters
+        Where
+          ord(CandidateWordLetter)<>ord('$(vStartChar)')
+        and
+                ord(CandidateWordLetter)<>45 // allow dash, e.g. CR-324
+        AND (
+               (ord(CandidateWordLetter)<=47)
+                              OR
+               (ord(CandidateWordLetter)>=58 and ord(CandidateWordLetter)<=64)
+                              OR
+               (ord(CandidateWordLetter)>=91 and ord(CandidateWordLetter)<=94)
+                              OR
+               (ord(CandidateWordLetter)>=123)
+        )
+        ;
+
+        // load only all words which do not contain those excluded characters into the new table and add
+        // the link to the source table
+
+        IF isnull(vCheckTableExistance) THEN
+            CONCATENATE (HashtagStub)
+            LOAD
+              DISTINCT
+                CandidateWord as A,
+              CandidateKey  as B
+            Resident
+                HashtagCandidates
+            where
+                NOT exists(ExcludedHashtag, CandidateWord)
+            ;
+
+
+            "$(vTargetTableName)":
+            NoConcatenate
+            Load
+              mid(A,2) as "$(vTargetColumnName).$(vTargetTableName)",
+              B  as "$(vTargetKeyName)",
+              1 as "Count.$(vTargetTableName)"
+            Resident
+              HashtagStub
+            where A <> 'DeleteMeLater'
+            ;
+
+            DROP TABLE HashtagStub;
+
+        ELSE
+
+            CONCATENATE ("$(vTargetTableName)")
+            LOAD
+              DISTINCT
+              CandidateWord as "$(vTargetColumnName).$(vTargetTableName)",
+              CandidateKey  as "$(vTargetKeyName)",
+              1 as "Count.$(vTargetTableName)"
+            Resident
+              HashtagCandidates
+            where
+              NOT exists(ExcludedHashtag, CandidateWord)
+               ;
+        END IF;
+
+        // clean up
+        DROP TABLE ExcludedHashtags, HashtagLetters, HashtagCandidates;
+        LET vStartChar=null();
+        LET vWordSeparator=null();
+        LET vSourceTableName=null();
+        LET vSourceColumnName=null();
+        LET vTargetTableName=null();
+        LET vTargetColumnName=null();
+        LET vTargetKeyName=null();
+        LET vMinLength=null();
+
+    END IF;
+
+    // by now we have a sanitized hashtag table. As the last step, check if more than 1 hashtag has been used, and, if so
+    // join it to the sanitized table
+
+
+    // Left Join (Hashtags)
+    // Load
+    //     %ID.Activity,
+    //     count(distinct Hashtag) as "# Other Hashtags"
+    // Resident
+    //     Hashtags
+    // Group By %ID.Activity
+    // ;
+
+    // Left Join(Hashtags)
+    // Load
+    //     %ID.Activity,
+    //     Hashtag as "Other Hashtag"
+    // Resident
+    //     Hashtags
+    // Where
+    //     "# Other Hashtags" > 1
+    // ;
+
+    /*
+    Rename Table Hashtags to HashtagsTemp;
+
+    Hashtags:
+    NoConcatenate
+    Load
+        *
+    Resident
+        HashtagsTemp
+    // Where
+    //     Hashtag <> "Other Hashtag"
+    // And "# Other Hashtags" > 1
+    ;
+
+    Drop table HashtagsTemp;
+    // Drop Field "# Other Hashtags";
+
+    */
+    
+END SUB
+
+SUB dropAllTables
+
+    CALL logBox('Start dropAllTables');
+
+    FOR vCount = 0 to NoOfTables()-1
+        LET vTableName = TableName($(vCount));
+        IF LEN('$(vTableName)') > 0 THEN
+            DROP TABLE $(vTableName);
+            CALL log('$(vTableName)','Dropped Table');
+        END IF
+    NEXT vCount
+
+    LET  vTableName = NULL();
+    LET  vCount     = NULL();
+
+END SUB
+
+SUB storeAllTables
+
+    CALL logBox('Start storeAllTables');
+
+    FOR vCount = 0 to NoOfTables()-1
+
+        LET vTableName = TableName($(vCount));
+        IF LEN('$(vTableName)') > 0 THEN
+        
+            STORE '$(vTableName)' INTO '$(vExportDataFolder)$(vPrefix)_$(vTableName).qvd' (qvd);
+            CALL log('$(vTableName) stored','I');
+            CALL exportFieldNames('$(vTableName)','$(vPrefix)_');
+        
+        END IF
+    
+    NEXT vCount
+
+    LET  vTableName = NULL();
+    LET  vCount     = NULL();
+
+END SUB
+
+SUB getMap(vSheet,vTab)
+
+    CALL logBox('Start getMap');
+    CALL log('$(vSheet)','Sheet');
+    CALL log('$(vTab)','Tab');
+    
+    $(vTab):
+    MAPPING
+    LOAD
+        *
+    FROM 
+        $(vSheet)
+        (ooxml, embedded labels, table is $(vTab))
+    ;
+
+END SUB
+
+SUB getXLS(vSheet,vTab)
+
+    CALL logBox('Start getXLS');
+    CALL log('$(vSheet)','Sheet');
+    CALL log('$(vTab)','Tab');
+    
+    $(vTab):
+    LOAD
+        *
+    FROM 
+        $(vSheet)
+        (ooxml, embedded labels, table is $(vTab))
+    ;
+
+END SUB
+
+SUB getQVD(vFile,vFolder,vTableName)
+    // read a qvf file $(vFile) from a directory which is stored in a variable $(vFolder)
+    // and gives the table a name of $(vTableName), if passed into the function, else
+    // it calls the table $(vFolder)_$(vFile)
+
+        CALL logBox('Start getQVD');
+        CALL log('$(vFile)','File');
+        // CALL log('$(vFolder)','Folder');
+        CALL log('$(vTableName)','QVD');
+
+        LET vLocation = chr(36)&'('&'$(vFolder)'&')';
+        
+        $(vFolder)$(vFile):
+        LOAD
+            *
+        FROM 
+            '$(vLocation)$(vTable).qvd' (qvd);
+        ;
+
+        IF LEN('$(vTableName)') > 0 THEN
+            RENAME TABLE $(vFolder)$(vFile) TO '$(vTableName)';
+        END IF
+
+        LET vLocation = NULL();
+
+END SUB
+
+SUB validateRuleSet(vSet1,vSet2,vSet3,vSet4,vSet5,vSet6)
+    // Description:
+        // Explain what the rotine does
+    // Logic:
+        // 1. load all rules
+            CALL logBox('Start validateRuleSet');
+            call getXLS('$(vMetaXLS)','DataQualityRules');
+
+        // 2. filter only the rules we really need 
+            // This has to be done this way because 
+            // I want to use the getXLS which has no where clause filter
+
+            rename table DataQualityRules TO DataQualityRulesTemp;
+
+            DataQualityRules:
+            NoConcatenate
+            Load
+                *
+            Resident
+                DataQualityRulesTemp
+            Where
+                Set = pick(
+                    match(Set,   '$(vSet1)','$(vSet2)','$(vSet3)', '$(vSet4)','$(vSet5)','$(vSet6)'),
+                                '$(vSet1)','$(vSet2)','$(vSet3)', '$(vSet4)','$(vSet5)','$(vSet6)')
+                And 
+                    Load = 'Y'
+            Order By
+                Folder, Table, Set
+            ;
+
+            drop table DataQualityRulesTemp;
+
+
+        // 3. process rules 1 by 1
+
+            // how many rows do we need to process?
+                let vRowCount = NumMax(NoOfRows('DataQualityRules'),0) -1;
+
+            // ok, lets start
+            for i = 0 to $(vRowCount)
+
+                // a. store each field in the rules table in a variable
+                    let vTable          = peek('Table',         i, 'DataQualityRules');
+                    let vNextTable      = peek('Table',         i+1, 'DataQualityRules');
+                    let vFolder         = peek('Folder',        i, 'DataQualityRules');
+                    let vField          = peek('Field',         i, 'DataQualityRules');
+                    let vRule 	        = peek('Rule',          i, 'DataQualityRules');
+                    let vSet 	        = peek('Set',           i, 'DataQualityRules');
+                    let vFormula        = peek('Formula',       i, 'DataQualityRules');
+                    let vThreshold      = peek('Threshold',     i, 'DataQualityRules');
+                    let vCompare        = peek('Compare',       i, 'DataQualityRules');
+                    let vDescription    = peek('Description',   i, 'DataQualityRules');
+                    let vDisplay        = peek('Display',       i, 'DataQualityRules');
+
+                // b. check if table to be checked is already in memory, else load it
+                    LET vTableIsLoaded = If(TableNumber('$(vTable)')>=0,dual('Yes',1),dual('NULL',0));
+
+                    if '$(vTableIsLoaded)' = 'NULL' then
+                        call getQVD('$(vTable)','$(vFolder)','$(vTable)');
+                    end if
+
+                // c. remember how many rows that table has so that we can calculate violation rates in
+                //    the app
+                    let vRows = NoOfRows('$(vTable)');
+                
+                // d. log what we are about to do 
+                    call log('"$(vRule)" with Formula "$(vFormula)" in Table "$(vTable)"','Processing Rule');
+
+                // e. evaluate
+                    "Data Quality":
+                    LOAD
+                        num(now()+$(i))                     as Id,
+                        Id 								    as Key,
+                        '$(vTable)' 						as Table,
+                        '$(vField)' 		    			as Field,
+                        '$(vFolder)'                        as Folder,
+                        '$(vSet)'                           as Set,
+                        if(isnull($(vField)),'Field is empty', $(vField)) as Content,
+                        '$(vRule)' 	                        as Rule,
+                        '$(vThreshold)' 	                as Threshold,
+                        '$(vFormula)' 	                    as Formula,
+                        '$(vCompare)' 	                    as Comparison,
+                        evaluate(if($(vFormula), 1, 0))     as Violation,	
+                        '$(vRows)'						    as TableRows,
+                        $(vDisplay)					        as DisplayName,
+                        now()                               as ValidationDate,
+                        '$(vDescription)'                   as Description  
+                    RESIDENT 
+                        $(vTable)
+                    WHERE 
+                        // we don't need any records that pass the test so filter
+                        evaluate(if($(vFormula), 1, 0)) <> 0
+                    ; 
+
+                // f. check if we need the table again (to save on load time), elese drop it
+                    if '$(vTable)' <>  '$(vNextTable)'
+                        drop table $(vTable);
+                    end if
+            
+            next i
+
+        // 4. done. now cleanup the mess again
+            drop table DataQualityRules;
+            let i = null();
+            let vTable = null();
+            let vNextTable = null();
+            let vFolder = null();
+            let vField = null();
+            let vSet = null();
+            let vThreshold = null();
+            let vFormula = null();
+            let vRule = null();
+            let vRowCount = null();
+            let vCompare = null();
+            let vNextTable  = null();
+            let vDescription = null();
+            let vDisplay = null();
+            let vRows = null();
+            let vSet1 = null();
+            let vSet2 = null();
+            let vSet3 = null();
+            let vSet4 = null();
+            let vSet5 = null();
+            let vSet6 = null();
+            let vRowCount = null();
+            let vTableIsLoaded = null();
+
+   
+END SUB
+
+SUB checkQVD(vLocation, vFile, vPrefix)
+    // returns its result in 2 global variables: vErrorCode (0 or 1, with 1 being an error and 0 being ok)
+    // and vQVDExists (Y or N, self explanatory) 
+
+    CALL logBox('Start checkQVDExists');
+
+    IF LEN('$(vLocation)') > 0 AND LEN('$(vFile)') AND LEN('$(vPrefix)')> 0 // check params
+        LET vParams= 'PASS';
+    ELSE
+        LET vParams = 'FAIL';
+    END IF
+
+    IF  '$(vParams)' = 'PASS' THEN // all params are ok
+
+        LET vErrorCode = 0; // assume positive outcome
+        
+        // apparently the line below is not needed, but i leave it in so that i have one
+        // place i can come back to and get the decoded folder version if I ever need it in some
+        // other code. This place here seems like the most logical one to find it :-)
+        
+        // LET vDecodedLocation = chr(36)&'('&'$(vLocation)'&')';
+       
+        IF NOT(IsNull(QvdCreateTime('$(vLocation)$(vPrefix)$(vFile).qvd'))) THEN // file exists
+        
+            IF FileSize('$(vLocation)$(vPrefix)$(vFile).qvd') > 0 THEN // and is not zero bytes
+
+                LET vQVDExists = 'Y';
+                LET vErrorCode = 0;
+                CALL log('File $(vPrefix)$(vFile) exists and is ok');
+            
+            ELSE // file exists but is zero bytes
+            
+                LET vErrorCode = 1;
+                LET vQVDExists = 'Y';
+                CALL log('File $(vFile) exists but is zero Bytes','E');
+            
+            END IF
+        
+        ELSE // file does not exist
+
+            LET vErrorCode = 1;
+            LET vQVDExists = 'N';
+            CALL log('File $(vPrefix)$(vFile) does not exist','E');
+        
+        END IF
+
+    ELSE // params not ok
+
+        CALL log('You need to pass three parameters: Location, File Name and Prefix','E');
+        LET vErrorCode = 1;
+        LET vQVDExists = 'N';
+
+    END IF
+
+    // cleanup
+    LET vDecodedLocation    = NULL();
+    LET vLocation           = NULL();
+    LET vFile               = NULL();
+    LET vPrefix             = NULL();
+
+END SUB
+
+SUB loadStrings(vSheet, vTab, vDefaultLanguage)
+  
+    // to display a string use $(=vText(<Text ID>,<Fallback Text>))
+    // where Text ID = ERR-1, i.. any unique identifier as given in the XLS in the vTab on vSheet
+    // and Fallback Text = what to show if TExt ID is not found
+
+    // also you 
+    call logBox('Loading Strings');
+
+    CodeMap:
+    Mapping LOAD * INLINE [
+    Element, Description
+    CD1, Chart Dimension (1)
+    CD2, Chart Dimension (2)
+    CD3, Chart Dimension (3)
+    CD4, Chart Dimension (4)
+    CM1, Chart Metric (1)
+    CM2, Chart Metric (2)
+    CM3, Chart Metric (3)
+    CM4, Chart Metric (4)
+    CT, Chart Title
+    CS, Chart Subtitle
+    CF, Chart Footnote
+    CE1, Chart Element (1)
+    CE2, Chart Element (2)
+    CE4, Chart Element (3)
+    CE4, Chart Element (4)
+    CR1, Chart Reference (1)
+    CR2, Chart Reference (2)
+    CR3, Chart Reference (3)
+    CR4, Chart Reference (4)
+    SUM, Chart Total
+    MML, Master Metric Label
+    MMD, Master Metric Description
+    MDL, Master Dimension Label
+    MDD, Master Dimension Description
+    MCL, Master Chart Label
+    MCD, Master Chart Description
+    ST, Sheet Title
+    SD, Sheet Description
+    ];
+
+
+    Strings:
+    LOAD
+    ID												AS %ID.String,
+    Language 										AS Language.String,
+    Object 											AS Object.String,
+    Element 								        AS Element.String,
+    applymap('CodeMap','N/A') 						AS Description.String,
+    Text 										    AS Text.String,
+    Publish											AS Published.String
+    FROM 
+        $(vSheet)
+        (ooxml, embedded labels, table is $(vTab))
+    WHERE
+        Publish = 'Yes'
+    ;
+
+    SET vLanguage = if(	len(getfieldselections([Language.String]))= 2,
+                        getfieldselections([Language.String]), 
+                        '$(vDefaultLanguage)'
+                    );
+
+    SET vText = 
+        if( 
+            len(only({<%ID.String= {'$1'}, [Language.String] = {'$(=vLanguage)'}>} Text.String)) > 0,
+            only({<%ID.String= {'$1'}, [Language.String] = {'$(=vLanguage)'}>} Text.String),
+            '$2'
+        )
+    ;
+
+    TAG %ID.String, 
+        Language.String,  
+        Object.String, 
+        Description.String, 
+        Element.String, 
+        Text.String, 
+        Published.String  
+    WITH $hidden;
+
+END SUB
+
+SUB createReportingPeriod(vDateField,vTableName,vFieldName,vGenerateData)
+
+    IF '$(vGenerateData)' = 'Y' THEN
+
+        [Min/Max dates]:
+        LOAD
+            FLOOR(MIN("Date_")) AS "MinDate",
+            FLOOR(MAX("Date_")) AS "MaxDate"
+        ;
+        LOAD
+            FIELDVALUE('$(vDateField)', ITERNO()) AS "Date_"
+        AUTOGENERATE(1)
+        WHILE 
+            NOT ISNULL(FIELDVALUE('$(vDateField)', ITERNO()))
+        ;
+
+        //Create the variables for the Minimum and Maximum dates.
+        LET vMinDate = PEEK('MinDate', -1, 'Min/Max dates');
+        LET vMaxDate = PEEK('MaxDate', -1, 'Min/Max dates');
+
+        //Clear the cache of the [Min/Max dates] table as we have finished using it to get our Min and Max Dates for our variables.
+        DROP TABLES [Min/Max dates];
+
+        /********************************************************************************
+        **************************Populate missing date values***************************
+        ********************************************************************************/
+        //Create a list of dates between our Minimum and Maximum dates.
+        [TempDateValues]:
+        LOAD
+            DATE($(vMinDate) + ROWNO() -1) AS [$(vDateField)]
+        AUTOGENERATE $(vMaxDate) - $(vMinDate) +1;
+
+    ELSE
+
+        //Create a list of dates between our Minimum and Maximum dates.
+        [TempDateValues]:
+        LOAD
+            Date(FLOOR("Date_")) AS [$(vDateField)]
+        ;
+        LOAD 
+            FIELDVALUE('$(vDateField)', ITERNO()) AS "Date_"
+        AUTOGENERATE (1)
+        WHILE 
+            NOT ISNULL(FIELDVALUE('$(vDateField)', ITERNO()))
+        ;
+
+    END IF
+
+
+
+    //Create report flags
+    [Report Flags]:
+    INNER KEEP ([TempDateValues])
+    LOAD
+        [$(vDateField)]
+        , IF([$(vDateField)] = DATE(TODAY(1)),1) AS "Today"
+        , IF([$(vDateField)] = DATE(TODAY(1)-1),1) AS "Yesterday"
+        , IF(WEEK([$(vDateField)]) = WEEK(TODAY(1)) AND (Year([$(vDateField)]) = YEAR(TODAY(1))),1) AS "Current week"
+        , IF(MONTH([$(vDateField)]) = MONTH(TODAY(1)) AND (Year([$(vDateField)]) = YEAR(TODAY(1))), 1) AS "Current month"
+        , IF(YEAR([$(vDateField)]) = YEAR(TODAY(1)) AND NUM(CEIL(NUM(MONTH([$(vDateField)]))/3),00)=NUM(CEIL(NUM(MONTH(TODAY(1)))/3),00), 1) AS "Current quarter"
+        , IF(WEEK([$(vDateField)]) = WEEK(TODAY(1)) AND (Year([$(vDateField)]) = YEAR(ADDYEARS(TODAY(1),-1))),1) AS "Same week last year"
+        , IF(MONTH([$(vDateField)]) = MONTH(TODAY(1)) AND (Year([$(vDateField)]) = YEAR(ADDYEARS(TODAY(1),-1))), 1) AS "Same month last year"
+        , IF(YEAR([$(vDateField)]) = YEAR(ADDYEARS(TODAY(1),-1)) AND NUM(CEIL(NUM(MONTH([$(vDateField)]))/3),00)=NUM(CEIL(NUM(MONTH(TODAY(1)))/3),00), 1) AS "Same quarter last year"        , IF(Year([$(vDateField)]) = YEAR(TODAY(1)), 1) AS "Current year"
+        , IF(WEEKSTART([$(vDateField)]) = WEEKSTART(TODAY(1), -1),1) AS "Last week"
+        , IF(MONTHSTART([$(vDateField)]) = MONTHSTART(TODAY(1),-1), 1) AS "Last month"
+        , IF(YEAR([$(vDateField)]) = YEAR(ADDMONTHS(TODAY(1),-3)) AND NUM(CEIL(NUM(MONTH([$(vDateField)]))/3),00)=NUM(CEIL(NUM(MONTH(ADDMONTHS(TODAY(1),-3)))/3),00), 1) AS "Last quarter"
+        , IF(Year([$(vDateField)]) = YEAR(ADDYEARS(TODAY(1),-1)) , 1) AS "Last year"
+        , IF(WEEKSTART([$(vDateField)]) = WEEKSTART(TODAY(1), 1),1) AS "Next week"
+        , IF(MONTHSTART([$(vDateField)]) = MONTHSTART(TODAY(1),1), 1) AS "Next month"
+        , IF(YEAR([$(vDateField)]) = YEAR(ADDMONTHS(TODAY(1),3)) AND NUM(CEIL(NUM(MONTH([$(vDateField)]))/3),00)=NUM(CEIL(NUM(MONTH(ADDMONTHS(TODAY(1),3)))/3),00), 1) AS "Next quarter"
+        , IF(Year([$(vDateField)]) = YEAR(ADDYEARS(TODAY(1),1)) , 1) AS "Next year"
+        , IF(WEEK([$(vDateField)]) = WEEK(TODAY(1)) AND (Year([$(vDateField)]) = YEAR(TODAY(1))) AND ([$(vDateField)] <= TODAY(1)), 1) AS "Current week to date"
+        , IF(MONTH([$(vDateField)]) = MONTH(TODAY(1)) AND (Year([$(vDateField)]) = YEAR(TODAY(1))) AND ([$(vDateField)] <= TODAY(1)), 1) AS "Current month to date"
+        , IF((YEAR([$(vDateField)]) = YEAR(TODAY(1)) AND NUM(CEIL(NUM(MONTH([$(vDateField)]))/3),00)=NUM(CEIL(NUM(MONTH(TODAY(1)))/3),00)) AND (DAYNUMBEROFQUARTER([$(vDateField)])<= DAYNUMBEROFQUARTER(TODAY(1))), 1) AS "Current quarter to date"
+        , IF((YEAR([$(vDateField)]) = YEAR(ADDYEARS(TODAY(1),-1)) AND NUM(CEIL(NUM(MONTH([$(vDateField)]))/3),00)=NUM(CEIL(NUM(MONTH(TODAY(1)))/3),00)) AND (DAYNUMBEROFQUARTER([$(vDateField)])<= DAYNUMBEROFQUARTER(TODAY(1))), 1) AS "Same quarter last year to date"
+        , IF(Year([$(vDateField)]) = YEAR(TODAY(1)) AND [$(vDateField)] <= TODAY(1), 1) AS "Current year to date"
+        , IF(WEEKSTART([$(vDateField)]) = WEEKSTART(TODAY(1), -1) AND (NUM(WEEKDAY([$(vDateField)])) <= NUM(WEEKDAY(TODAY(1)-7))),1) AS "Last week to date"
+        , IF(MONTHSTART([$(vDateField)]) = MONTHSTART(TODAY(1), -1) AND (DAY([$(vDateField)]) <= DAY(TODAY(1))), 1) AS "Last month to date"
+        , IF((YEAR([$(vDateField)]) = YEAR(ADDMONTHS(TODAY(1),-3)) AND NUM(CEIL(NUM(MONTH([$(vDateField)]))/3),00)=NUM(CEIL(NUM(MONTH(ADDMONTHS(TODAY(1),-3)))/3),00)) AND (DAYNUMBEROFQUARTER([$(vDateField)], 1)<= DAYNUMBEROFQUARTER(TODAY(1))), 1) AS "Last quarter to date"
+        , IF(Year([$(vDateField)]) = YEAR(ADDYEARS(TODAY(1),-1)) AND ([$(vDateField)] <= ADDYEARS(TODAY(1),-1)), 1) AS "Last year to date"
+        // , IF(WEEKSTART([$(vDateField)]) = WEEKSTART(TODAY(1), 1) AND (NUM(WEEKDAY([$(vDateField)])) <= NUM(WEEKDAY(TODAY(1)+7))),1) AS "Next week to date"
+        // , IF(MONTHSTART([$(vDateField)]) = MONTHSTART(TODAY(1), 1) AND (DAY([$(vDateField)]) <= DAY(TODAY(1))), 1) AS "Next month to date"
+        // , IF((YEAR([$(vDateField)]) = YEAR(ADDMONTHS(TODAY(1),3)) AND NUM(CEIL(NUM(MONTH([$(vDateField)]))/3),00)=NUM(CEIL(NUM(MONTH(ADDMONTHS(TODAY(1),3)))/3),00)) AND (DAYNUMBEROFQUARTER([$(vDateField)], 1)<= DAYNUMBEROFQUARTER(TODAY(1))), 1) AS "Next quarter to date"
+        // , IF(Year([$(vDateField)]) = YEAR(ADDYEARS(TODAY(1),1)) AND ([$(vDateField)] <= ADDYEARS(TODAY(1),1)), 1) AS "Next year to date"
+        // , IF([$(vDateField)] > DATE(TODAY(1)-7) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Rolling 7 days"
+        // , IF([$(vDateField)] > DATE(TODAY(1)-8) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Rolling 8 days"
+        // , IF([$(vDateField)] > DATE(TODAY(1)-14) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Rolling 14 days"
+        // , IF([$(vDateField)] > DATE(TODAY(1)-15) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Rolling 15 days"
+        , IF(MONTHSTART([$(vDateField)]) > MONTHSTART(TODAY(1), -3) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Last 3 months"
+        , IF(MONTHSTART([$(vDateField)]) > MONTHSTART(TODAY(1), -6) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Last 6 months"
+        , IF(MONTHSTART([$(vDateField)]) > MONTHSTART(TODAY(1), -9) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Last 9 months"
+        , IF(MONTHSTART([$(vDateField)]) > MONTHSTART(TODAY(1), -12) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Last 12 months"
+        // , IF(MONTHSTART([$(vDateField)]) > MONTHSTART(TODAY(1), -13) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Last 13 months"
+        , IF(MONTHSTART([$(vDateField)]) > MONTHSTART(TODAY(1), -15) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Last 15 months"
+        , IF(MONTHSTART([$(vDateField)]) > MONTHSTART(TODAY(1), -18) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Last 18 months"
+        // , IF(WEEKSTART([$(vDateField)]) > WEEKSTART(TODAY(1), -3) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Last 3 weeks"
+        , IF(WEEKSTART([$(vDateField)]) > WEEKSTART(TODAY(1), -4) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Last 4 weeks"
+        , IF(WEEKSTART([$(vDateField)]) > WEEKSTART(TODAY(1), -6) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Last 6 weeks"
+        // , IF(WEEKSTART([$(vDateField)]) > WEEKSTART(TODAY(1), -9) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Last 9 weeks"
+        , IF(WEEKSTART([$(vDateField)]) > WEEKSTART(TODAY(1), -12) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Last 12 weeks"
+        // , IF(WEEKSTART([$(vDateField)]) > WEEKSTART(TODAY(1), -15) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Last 15 weeks"
+        // , IF(WEEKSTART([$(vDateField)]) > WEEKSTART(TODAY(1), -18) AND [$(vDateField)] <= DATE(TODAY(1)), 1) AS "Last 18 weeks"
+        // , IF([$(vDateField)] > DATE(TODAY(1)),1) AS "Future dates"
+    RESIDENT 
+        [TempDateValues]
+    ;
+
+    DROP TABLE [TempDateValues];
+
+    // Create reporting period field
+
+    // IF LEN('$(vTableName)') = 0 THEN 
+    //     LET vTableName = '$(vDateField)'; 
+    // END IF
+
+    // IF LEN('$(vFieldName)') = 0 THEN 
+    //     LET vTableName = '$(vDateField)'; 
+    // END IF
+
+    ABB:
+    MAPPING 
+    LOAD * INLINE [
+        Text, Short
+        Today, D
+        Yesterday, PD
+        Current week, W
+        Current month, M
+        Current quarter, Q
+        Same week last year, WPY
+        Same month last year, MPY
+        Same quarter last year, QPY        
+        Current year, Y
+        Last week, PW
+        Last month, PM
+        Last quarter, PQ
+        Last year, PY
+        Next week, NW
+        Next month, NM
+        Next quarter, NQ
+        Next year, NY
+        Current week to date, WTD
+        Current month to date, MTD
+        Current quarter to date, QTD
+        Current year to date, YTD
+        Last week to date, WTDPW
+        Last month to date, MTDPM
+        Last quarter to date, QTDPQ
+        Last year to date, YTDPY
+        Same quarter last year to date, QTDPY
+        Last 12 months, L12M
+        Last 3 months, L3M
+        Last 6 months, L6M
+        Last 9 months, L9M
+        Last 15 months, L15M
+        Last 18 months, L18M
+        Last 4 weeks, L4W
+        Last 6 weeks, L6W
+        Last 12 weeks, L12W
+    ];
+
+
+
+    FOR vCount = 2 to NoOfFields('Report Flags')
+
+        LET varReportPeriod = FieldName('$(vCount)','Report Flags');
+        LET varFieldName = '['&FieldName('$(vCount)','Report Flags')&']';
+
+        [$(vTableName)]:
+        LOAD
+            [$(vDateField)],
+            '$(varReportPeriod)'    AS "$(vFieldName)",
+            applymap('ABB', '$(varReportPeriod)','N/A') as "$(vFieldName) Short"
+        RESIDENT 
+            [Report Flags]
+        WHERE 
+            $(varFieldName) = 1
+        ;
+
+    NEXT;
+
+
+    //Clean Up
+    DROP TABLE [Report Flags];
+
+    LET varReportPeriod     = NULL();
+    LET varFieldName        = NULL();
+    LET vCount              = NULL();
+    LET vMinDate            = NULL();
+    LET vMaxDate            = NULL();
+
+END SUB
